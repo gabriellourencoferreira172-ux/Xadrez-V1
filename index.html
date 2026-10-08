@@ -180,14 +180,12 @@ main {
   border-radius: 24px;
 }
 
-/* O container quadrado */
 .board-wrap {
   position: relative;
   width: 100%;
-  padding-bottom: 100%;   /* quadrado mágico, funciona em TODO navegador */
+  padding-bottom: 100%;
 }
 
-/* O tabuleiro em si — absoluto dentro do wrap */
 .board {
   position: absolute;
   inset: 0;
@@ -200,7 +198,6 @@ main {
   background: #1a2035;
 }
 
-/* Casas — absolutas, 12.5% x 12.5% */
 .square {
   position: absolute;
   width: 12.5%;
@@ -208,7 +205,6 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background .18s ease;
   cursor: default;
 }
 
@@ -265,7 +261,9 @@ main {
 }
 @keyframes hintIn { from{transform:scale(.55);opacity:0} to{transform:scale(1);opacity:1} }
 
-/* Peças — usando os glifos CHEIOS para ambas as cores + contorno */
+/* ============================================================
+   PEÇAS — sem transformações ao selecionar (evita "arranque")
+   ============================================================ */
 .piece {
   font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "Apple Symbols", "Arial Unicode MS", "DejaVu Sans", sans-serif;
   font-size: calc(var(--sq, 48px) * .82);
@@ -275,8 +273,6 @@ main {
   -webkit-user-select: none;
   position: relative;
   z-index: 2;
-  transition: transform .14s cubic-bezier(.34,1.4,.64,1);
-  will-change: transform;
   paint-order: stroke fill;
   -webkit-text-stroke-linejoin: round;
 }
@@ -292,14 +288,12 @@ main {
   text-shadow: 0 0 1px rgba(0,0,0,.5);
 }
 
-.square.selected .piece { transform: scale(1.08); }
-
-/* Fantasma de arraste */
+/* Fantasma de arraste — só aparece durante o arraste real */
 .drag-ghost {
   position: fixed;
   z-index: 9999;
   pointer-events: none;
-  transform: translate(-50%, -50%) scale(1.15);
+  transform: translate(-50%, -50%) scale(1.12);
   filter: drop-shadow(0 14px 20px rgba(0,0,0,.65));
   opacity: .97;
 }
@@ -549,11 +543,7 @@ main {
    CONSTANTES
    ============================================================ */
 const FILES = ['a','b','c','d','e','f','g','h'];
-
-/* Usamos SEMPRE os glifos CHEIOS (U+265A..265F) e colorimos via CSS.
-   Assim tanto peças brancas quanto pretas ficam sólidas e visíveis. */
 const GLYPH = { K:'♚', Q:'♛', R:'♜', B:'♝', N:'♞', P:'♟' };
-
 const VAL   = { P:1, N:3, B:3, R:5, Q:9 };
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -566,10 +556,10 @@ const QUEEN_DIRS  = BISHOP_DIRS.concat(ROOK_DIRS);
 /* ============================================================
    MOTOR — UTILITÁRIOS
    ============================================================ */
-const colorOf   = p => p === p.toUpperCase() ? 'w' : 'b';
-const other     = c => c === 'w' ? 'b' : 'w';
-const sqIndex   = n => (8 - parseInt(n[1],10)) * 8 + FILES.indexOf(n[0]);
-const sqName    = i => FILES[i & 7] + (8 - (i >> 3));
+const colorOf = p => p === p.toUpperCase() ? 'w' : 'b';
+const other   = c => c === 'w' ? 'b' : 'w';
+const sqIndex = n => (8 - parseInt(n[1],10)) * 8 + FILES.indexOf(n[0]);
+const sqName  = i => FILES[i & 7] + (8 - (i >> 3));
 
 function cloneState(st) {
   return {
@@ -920,7 +910,7 @@ const overTitleEl = document.getElementById('overTitle');
 const overDescEl = document.getElementById('overDesc');
 
 /* ============================================================
-   CONSTRUÇÃO DO TABULEIRO (posicionamento absoluto)
+   CONSTRUÇÃO DO TABULEIRO
    ============================================================ */
 function buildBoard() {
   boardEl.innerHTML = '';
@@ -1016,7 +1006,6 @@ function renderBoard() {
     el.className = cls;
     el.innerHTML = '';
 
-    // Coordenadas — mostradas nas bordas visuais
     const showFile = (r === 7);
     const showRank = (c === 0);
     if (showFile) {
@@ -1032,8 +1021,7 @@ function renderBoard() {
       el.appendChild(rk);
     }
 
-    // Peça (glifo cheio colorido)
-    if (p && !(drag && drag.from === i)) {
+    if (p && !(drag && drag.from === i && drag.ghost)) {
       const span = document.createElement('span');
       span.className = 'piece ' + colorOf(p);
       span.textContent = GLYPH[p.toUpperCase()];
@@ -1401,42 +1389,35 @@ function showGameOver() {
 }
 
 /* ============================================================
-   INTERAÇÃO
+   INTERAÇÃO — DRAG & DROP (sem arranque)
    ============================================================ */
 function positionGhost(x, y) {
-  if (!drag) return;
+  if (!drag || !drag.ghost) return;
   drag.ghost.style.left = x + 'px';
   drag.ghost.style.top = y + 'px';
 }
 
-function startDrag(e, idx) {
-  const piece = state.board[idx];
+/* Cria o fantasma só quando o usuário realmente começa a arrastar */
+function createGhost(e) {
+  if (!drag || drag.ghost) return;
+  const piece = state.board[drag.from];
   if (!piece) return;
 
-  const rect = squareEls[idx].getBoundingClientRect();
+  const rect = squareEls[drag.from].getBoundingClientRect();
   const size = Math.max(rect.width * 0.88, 24);
+
   const ghost = document.createElement('div');
   ghost.className = 'piece drag-ghost ' + colorOf(piece);
   ghost.textContent = GLYPH[piece.toUpperCase()];
   ghost.style.fontSize = size + 'px';
   document.body.appendChild(ghost);
 
-  const isTouch = e.pointerType === 'touch';
-  drag = {
-    from: idx,
-    ghost: ghost,
-    moved: false,
-    startX: e.clientX,
-    startY: e.clientY,
-    pointerId: e.pointerId,
-    offsetY: isTouch ? -22 : 0
-  };
-  positionGhost(e.clientX, e.clientY + drag.offsetY);
+  drag.ghost = ghost;
+  positionGhost(e.clientX, e.clientY);
 
-  const pEl = squareEls[idx].querySelector('.piece');
+  /* Esconde a peça original — sem transição, some direto */
+  const pEl = squareEls[drag.from].querySelector('.piece');
   if (pEl) pEl.style.opacity = '0';
-
-  try { boardEl.setPointerCapture(e.pointerId); } catch (err) {}
 }
 
 function onPointerDown(e) {
@@ -1450,6 +1431,7 @@ function onPointerDown(e) {
   const idx = parseInt(sqEl.dataset.index, 10);
   if (isNaN(idx)) return;
 
+  /* Se já tem peça selecionada e clicou num destino legal → move */
   if (selected !== null && idx !== selected && targetMap.has(idx)) {
     attemptMove(selected, idx);
     return;
@@ -1457,10 +1439,20 @@ function onPointerDown(e) {
 
   const piece = state.board[idx];
   if (piece && colorOf(piece) === state.turn) {
+    /* Só marca como selecionado — nada de transformações, nada de fantasma ainda */
     selected = idx;
     buildTargets();
+
+    drag = {
+      from: idx,
+      ghost: null,
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      pointerId: e.pointerId
+    };
+    try { boardEl.setPointerCapture(e.pointerId); } catch (err) {}
     renderBoard();
-    startDrag(e, idx);
   } else if (selected !== null) {
     selected = null;
     targetMap = new Map();
@@ -1470,11 +1462,20 @@ function onPointerDown(e) {
 
 function onPointerMove(e) {
   if (!drag) return;
+
   if (!drag.moved) {
     const dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
-    if (dx*dx + dy*dy > 25) drag.moved = true;
+    if (dx * dx + dy * dy > 25) drag.moved = true;
   }
-  positionGhost(e.clientX, e.clientY + drag.offsetY);
+
+  /* Só cria o fantasma quando o arraste realmente começa */
+  if (drag.moved && !drag.ghost) {
+    createGhost(e);
+  }
+
+  if (drag.ghost) {
+    positionGhost(e.clientX, e.clientY);
+  }
 }
 
 function onPointerUp(e) {
@@ -1482,12 +1483,20 @@ function onPointerUp(e) {
   const d = drag;
   drag = null;
 
+  /* Limpa fantasma se existir */
   if (d.ghost && d.ghost.parentNode) d.ghost.parentNode.removeChild(d.ghost);
   try {
     if (boardEl.hasPointerCapture && boardEl.hasPointerCapture(d.pointerId))
       boardEl.releasePointerCapture(d.pointerId);
   } catch (err) {}
 
+  /* Se não houve arraste → mantém a seleção (só clique) */
+  if (!d.moved) {
+    renderBoard();
+    return;
+  }
+
+  /* Descobre onde soltou */
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const sqEl = el && el.closest ? el.closest('.square') : null;
 
@@ -1498,11 +1507,11 @@ function onPointerUp(e) {
       return;
     }
   }
-  if (d.moved) {
-    selected = null;
-    targetMap = new Map();
-    soundInvalid();
-  }
+
+  /* Soltou em local inválido → desmarca */
+  selected = null;
+  targetMap = new Map();
+  soundInvalid();
   renderBoard();
 }
 
@@ -1539,7 +1548,7 @@ document.addEventListener('keydown', e => {
 });
 
 /* ============================================================
-   TAMANHO DAS PEÇAS (--sq) — sempre em px reais
+   TAMANHO DAS PEÇAS
    ============================================================ */
 function updateSquareSize() {
   const w = boardEl.getBoundingClientRect().width;
